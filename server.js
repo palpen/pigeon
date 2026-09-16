@@ -3,14 +3,27 @@ import multer from 'multer';
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
 import { DatabaseSync } from 'node:sqlite';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import {authenticateAgent, readAgents, positiveInteger} from './security.js';
+import {boundedUpload} from './uploads.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const types = {'.md':['markdown','text/markdown'],'.markdown':['markdown','text/markdown'],'.txt':['text','text/plain'],'.png':['image','image/png'],'.jpg':['image','image/jpeg'],'.jpeg':['image','image/jpeg'],'.gif':['image','image/gif'],'.webp':['image','image/webp'],'.avif':['image','image/avif'],'.pdf':['pdf','application/pdf']};
-export function createApp({dataDir = process.env.DATA_DIR || path.join(ROOT,'data'), owner = process.env.OWNER_LOGIN, publicUrl = process.env.PUBLIC_URL, token = process.env.AGENT_TOKEN} = {}) {
+export function createApp({dataDir = process.env.DATA_DIR || path.join(ROOT,'data'), owner = process.env.OWNER_LOGIN, publicUrl = process.env.PUBLIC_URL,
+  agentTokensFile = process.env.AGENT_TOKENS_FILE,
+  maxStorageBytes = process.env.MAX_TOTAL_STORAGE_BYTES ?? 5 * 1024 ** 3,
+  maxFiles = process.env.MAX_FILES ?? 10000,
+  uploadsPerMinute = process.env.UPLOADS_PER_MINUTE ?? 20,
+  minFreeBytes = process.env.MIN_FREE_DISK_BYTES ?? 1024 ** 3} = {}) {
+  if (process.env.AGENT_TOKEN) throw new Error('AGENT_TOKEN is no longer supported. Migrate to AGENT_TOKENS_FILE.');
+  readAgents(agentTokensFile);
+  maxStorageBytes = positiveInteger(maxStorageBytes,'MAX_TOTAL_STORAGE_BYTES');
+  maxFiles = positiveInteger(maxFiles,'MAX_FILES');
+  uploadsPerMinute = positiveInteger(uploadsPerMinute,'UPLOADS_PER_MINUTE');
+  minFreeBytes = positiveInteger(minFreeBytes,'MIN_FREE_DISK_BYTES');
   fs.mkdirSync(path.join(dataDir,'blobs'),{recursive:true,mode:0o700});
   fs.mkdirSync(path.join(dataDir,'tmp'),{recursive:true,mode:0o700});
   const db = new DatabaseSync(path.join(dataDir,'relay.sqlite'));
@@ -21,12 +34,22 @@ export function createApp({dataDir = process.env.DATA_DIR || path.join(ROOT,'dat
     res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
     const localHosts = ['localhost:8787','127.0.0.1:8787'];
     const host = req.get('host');
-    const local = localHosts.includes(host) && !req.get('tailscale-user-login') && !req.get('x-forwarded-for');
     if (!localHosts.includes(host) && host !== (publicUrl && new URL(publicUrl).host)) return res.status(403).json({error:'Unrecognized host.'});
-    const supplied = req.get('authorization') || '';
-    const expected = token ? `Bearer ${token}` : '';
-    const agent = expected && Buffer.byteLength(supplied)===Buffer.byteLength(expected) && timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));
-    if (!local && !agent && (!owner || req.get('tailscale-user-login') !== owner)) return res.status(403).json({error:'Connect with the approved Tailscale account.'});
+    const supplied = req.get('authorization');
+    let agent;
+    try { agent = supplied === undefined ? undefined : authenticateAgent(supplied,readAgents(agentTokensFile)); }
+    catch { return res.status(503).json({error:'Agent authentication configuration is unavailable.'}); }
+    // A TCP caller can forge every HTTP header. Trust Tailscale identity only
+    // through the private Unix socket, never through the loopback TCP listener.
+    const trustedProxy = req.socket.remoteAddress === undefined && req.socket.remoteFamily === undefined;
+    const isOwner = supplied === undefined && trustedProxy && owner && req.get('tailscale-user-login') === owner;
+    if (!agent && !isOwner) return res.status(403).json({error:'Use the approved Tailscale account or a valid agent token.'});
+    if (agent) {
+      const scope = ['GET','HEAD'].includes(req.method) ? 'read' :
+        req.method === 'POST' && /^\/api\/files\/?$/i.test(req.path) ? 'upload' :
+        req.method === 'DELETE' && /^\/api\/files\/[^/]+\/?$/i.test(req.path) ? 'delete' : null;
+      if (!scope || !agent.scopes.includes(scope)) return res.status(403).json({error:'Agent token does not permit this operation.'});
+    }
     if (!['GET','HEAD','OPTIONS'].includes(req.method)) {
       const origin = req.get('origin');
       if (origin && origin !== publicUrl && origin !== `http://${host}`) return res.status(403).json({error:'Cross-origin request blocked.'});
@@ -34,14 +57,11 @@ export function createApp({dataDir = process.env.DATA_DIR || path.join(ROOT,'dat
     }
     next();
   });
-  const upload = multer({dest:path.join(dataDir,'tmp'),limits:{fileSize:50*1024*1024,files:1,fields:0,parts:1},fileFilter(req,file,cb){
-    if (!types[path.extname(file.originalname).toLowerCase()]) return cb(Object.assign(new Error('Supported: Markdown, text, PNG, JPEG, GIF, WebP, AVIF, and PDF.'),{status:415}));
-    cb(null,true);
-  }});
+  const upload = boundedUpload({dataDir,types,maxStorageBytes,maxFiles,uploadsPerMinute,minFreeBytes});
   const shape = row => ({...row,url:`/files/${row.id}`,downloadUrl:`/api/files/${row.id}/download`});
   const lookup = (req,res,next) => {req.fileRecord=db.prepare('SELECT * FROM files WHERE id=?').get(req.params.id); if(!req.fileRecord)return res.status(404).json({error:'File not found.'}); next();};
   app.get('/api/files',(req,res)=>res.json({files:db.prepare('SELECT * FROM files ORDER BY created DESC').all().map(shape)}));
-  app.post('/api/files',upload.single('file'),(req,res,next)=>{
+  app.post('/api/files',upload,(req,res,next)=>{
     if(!req.file)return res.status(400).json({error:'Upload one file using the file field.'});
     const id=randomUUID(), blob=path.join(dataDir,'blobs',id);
     try {
@@ -79,5 +99,6 @@ export function createApp({dataDir = process.env.DATA_DIR || path.join(ROOT,'dat
   return {app,close:()=>db.close()};
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-  const {app}=createApp();app.listen(8787,'127.0.0.1',()=>console.log('Pigeon listening at http://127.0.0.1:8787'));
+  const {start}=await import('./start.js');
+  await start();
 }

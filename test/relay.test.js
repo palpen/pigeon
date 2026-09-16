@@ -8,17 +8,18 @@ import {createApp} from '../server.js';
 
 test('upload, sanitize, isolate, persist, retrieve and delete files',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'relay-test-'));
+ const socketPath=path.join(dir,'test.sock');
  let instance=createApp({dataDir:dir,owner:'owner@example.com',publicUrl:'https://relay.example:8443'});
- let server=instance.app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
- let base=`http://127.0.0.1:${server.address().port}`;
+ let server=instance.app.listen(socketPath);await new Promise(r=>server.once('listening',r));
+ const base='http://localhost:8787';
  const request=async(url,options={})=>{
-   const prepared=new Request(base+url,{...options,headers:{'X-Pigeon-Request':'1',...options.headers}});
+   const prepared=new Request(base+url,{...options,headers:{'X-Pigeon-Request':'1','tailscale-user-login':'owner@example.com',...options.headers}});
    const body=options.body?Buffer.from(await prepared.arrayBuffer()):undefined;
-   return new Promise((resolve,reject)=>{const req=http.request(base+url,{method:options.method||'GET',headers:{...Object.fromEntries(prepared.headers),host:options.headers?.host||'localhost:8787',...(body?{'content-length':body.length}:{})}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve(new Response(res.statusCode===204?null:Buffer.concat(chunks),{status:res.statusCode,headers:res.headers})));});req.on('error',reject);req.end(body);});
+   return new Promise((resolve,reject)=>{const req=http.request(base+url,{socketPath,method:options.method||'GET',headers:{...Object.fromEntries(prepared.headers),host:options.headers?.host||'localhost:8787',...(body?{'content-length':body.length}:{})}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve(new Response(res.statusCode===204?null:Buffer.concat(chunks),{status:res.statusCode,headers:res.headers})));});req.on('error',reject);req.end(body);});
  };
  try {
   assert.equal((await request('/api/files',{headers:{host:'evil.example'}})).status,403);
-  assert.equal((await request('/api/files',{headers:{host:'relay.example:8443'}})).status,403);
+  assert.equal((await request('/api/files',{headers:{host:'relay.example:8443','tailscale-user-login':''}})).status,403);
   assert.equal((await request('/api/files',{headers:{host:'relay.example:8443','tailscale-user-login':'other@example.com'}})).status,403);
   assert.equal((await request('/api/files',{headers:{host:'relay.example:8443','tailscale-user-login':'owner@example.com'}})).status,200);
   assert.equal((await request('/api/files',{method:'POST',headers:{origin:'https://evil.example'}})).status,403);
@@ -34,7 +35,7 @@ test('upload, sanitize, isolate, persist, retrieve and delete files',async()=>{
   for(const [name,content] of [['image.png',Buffer.from('89504e470d0a1a0a','hex')],['document.pdf','%PDF-1.4\n%%EOF'],['note.txt','hello']]){const r=await upload(name,content);assert.equal(r.status,201);const f=await r.json();assert.equal((await request(`/api/files/${f.id}/raw`)).status,200);}
   assert.equal((await (await request('/api/files')).json()).files.length,4);
   await new Promise(r=>server.close(r));instance.close();
-  instance=createApp({dataDir:dir});server=instance.app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;
+  instance=createApp({dataDir:dir,owner:'owner@example.com'});server=instance.app.listen(socketPath);await new Promise(r=>server.once('listening',r));
   assert.equal((await (await request('/api/files')).json()).files.length,4);
   assert.equal((await request(`/api/files/${file.id}`,{method:'DELETE'})).status,204);
   assert.equal((await request(`/api/files/${file.id}`)).status,404);
