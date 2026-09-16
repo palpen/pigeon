@@ -1,29 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.example.pigeon</string>
-  <key>ProgramArguments</key><array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/absolute/path/to/pigeon/server.js</string>
-  </array>
-  <key>WorkingDirectory</key><string>/absolute/path/to/pigeon</string>
-  <key>EnvironmentVariables</key><dict>
-    <key>OWNER_LOGIN</key><string>you@example.com</string>
-    <key>PUBLIC_URL</key><string>https://your-host.your-tailnet.ts.net:8443</string>
-    <key>DATA_DIR</key><string>/absolute/private/pigeon-data</string>
-    <key>PORT</key><string>8787</string>
-    <!-- Create the private registry first, or omit AGENT_TOKENS_FILE. -->
-    <key>AGENT_TOKENS_FILE</key><string>/absolute/private/pigeon-credentials/agents.json</string>
-    <key>MAX_TOTAL_STORAGE_BYTES</key><string>5368709120</string>
-    <key>MAX_FILES</key><string>10000</string>
-    <key>UPLOADS_PER_MINUTE</key><string>20</string>
-    <key>MIN_FREE_DISK_BYTES</key><string>1073741824</string>
-  </dict>
-  <!-- Decimal 63 = octal 077. No bearer token belongs in this file. -->
-  <key>Umask</key><integer>63</integer>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>/absolute/private/pigeon-data/server.log</string>
-  <key>StandardErrorPath</key><string>/absolute/private/pigeon-data/error.log</string>
+<key>Label</key><string>com.example.pigeon</string>
+<key>ProgramArguments</key><array><string>/opt/homebrew/bin/node</string><string>/absolute/path/to/pigeon/server.js</string></array>
+<key>WorkingDirectory</key><string>/absolute/path/to/pigeon</string>
+<key>EnvironmentVariables</key><dict><key>OWNER_LOGIN</key><string>you@example.com</string><key>PUBLIC_URL</key><string>https://your-host.your-tailnet.ts.net:8443</string></dict>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>/absolute/path/to/pigeon/data/server.log</string>
+<key>StandardErrorPath</key><string>/absolute/path/to/pigeon/data/error.log</string>
 </dict></plist>
