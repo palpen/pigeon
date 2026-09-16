@@ -10,3 +10,10 @@ data/
 *.db
 *.db-*
 deploy/*.plist
+# Defense in depth: credentials must live outside the repository.
+credentials/
+secrets/
+*.token
+*.token.*
+*agents*.json
+*agents*.json.*

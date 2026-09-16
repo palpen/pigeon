@@ -1,4 +1,10 @@
-# Pigeon security fixes: Mac mini handoff
+# Pigeon security fixes: original Mac mini handoff
+
+> Historical handoff for commit `510c125`. The continuation completed the code,
+> regression tests, credential tools, and documentation on macOS. Current
+> behavior is documented in [README.md](README.md); the remaining production
+> validation and approval steps are in [deploy/SECURITY_MIGRATION.md](deploy/SECURITY_MIGRATION.md).
+> The WIP notes below are preserved as context, not current setup instructions.
 
 ## Status and scope
 
