@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.example.pigeon</string>
+<key>ProgramArguments</key><array><string>/opt/homebrew/bin/node</string><string>/absolute/path/to/pigeon/server.js</string></array>
+<key>WorkingDirectory</key><string>/absolute/path/to/pigeon</string>
+<key>EnvironmentVariables</key><dict><key>OWNER_LOGIN</key><string>you@example.com</string><key>PUBLIC_URL</key><string>https://your-host.your-tailnet.ts.net:8443</string></dict>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>/absolute/path/to/pigeon/data/server.log</string>
+<key>StandardErrorPath</key><string>/absolute/path/to/pigeon/data/error.log</string>
+</dict></plist>

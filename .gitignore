@@ -1,0 +1,12 @@
+node_modules/
+data/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+deploy/*.plist
